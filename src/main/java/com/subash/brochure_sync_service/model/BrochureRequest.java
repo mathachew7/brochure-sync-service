@@ -37,6 +37,6 @@ public class BrochureRequest {
     private String productInterest;
 
     private String status;  // PENDING, SYNCED, FAILED
-
+    private String failureReason;  // Reason for failure if status is FAILED
     private String createdAt;
 }

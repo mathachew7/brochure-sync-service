@@ -8,6 +8,8 @@ import io.cucumber.java.en.Given;
 import io.cucumber.java.en.When;
 import io.cucumber.java.en.Then;
 
+import org.springframework.kafka.core.KafkaTemplate;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -17,9 +19,11 @@ public class BrochureRequestSteps {
     private String productInterest;
     private BrochureRequest createdRequest;
 
-    // Same mocking approach as your JUnit tests — no real Postgres needed here either
+    // Same mocking approach as your JUnit tests — no real Postgres or Kafka broker needed here either
     private final BrochureRequestRepository repository = mock(BrochureRequestRepository.class);
-    private final BrochureRequestService service = new BrochureRequestService(repository);
+    @SuppressWarnings("unchecked")
+    private final KafkaTemplate<String, String> kafkaTemplate = mock(KafkaTemplate.class);
+    private final BrochureRequestService service = new BrochureRequestService(repository, kafkaTemplate);
 
     @Given("a prospect wants a brochure for {string}")
     public void a_prospect_wants_a_brochure_for(String product) {
@@ -34,7 +38,9 @@ public class BrochureRequestSteps {
         request.setCompany(company);
         request.setProductInterest(productInterest);
 
-        // Mock save() to just hand back whatever it's given — same trick as before
+        // Mock save() to hand back the request with a generated id — the service
+        // publishes that id to Kafka, so it must be present to avoid an NPE
+        request.setId(1L);
         when(repository.save(request)).thenReturn(request);
 
         // THIS is the real difference — now we're actually calling your real Service,
