@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  postgres-db:
+    image: postgres:16
+    container_name: brochure-sync-postgres
+    environment:
+      POSTGRES_USER: devadmin
+      POSTGRES_PASSWORD: devpassword123
+      POSTGRES_DB: brochure_sync_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - brochure-sync-pgdata:/var/lib/postgresql/data
+volumes:
+  brochure-sync-pgdata:
