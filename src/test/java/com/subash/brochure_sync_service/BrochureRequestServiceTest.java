@@ -1,23 +1,33 @@
 package com.subash.brochure_sync_service.service;
 
+import com.subash.brochure_sync_service.dto.BrochureRequestRequest;
+import com.subash.brochure_sync_service.dto.BrochureRequestResponse;
 import com.subash.brochure_sync_service.model.BrochureRequest;
+import com.subash.brochure_sync_service.model.SyncStatus;
 import com.subash.brochure_sync_service.repository.BrochureRequestRepository;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.Captor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.kafka.core.KafkaTemplate;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.Mockito.when;
+import tools.jackson.databind.json.JsonMapper;
 
-import java.util.List;
 import java.util.Optional;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
-public class BrochureRequestServiceTest {
+class BrochureRequestServiceTest {
 
     @Mock
     private BrochureRequestRepository repository;
@@ -25,66 +35,87 @@ public class BrochureRequestServiceTest {
     @Mock
     private KafkaTemplate<String, String> kafkaTemplate;
 
-    @Test
-    void createRequest_shouldSetDefaultStatusAndAssignCreatedAt() {
-        // Create a sample BrochureRequest object
-        BrochureRequest request = new BrochureRequest();
-        request.setId(1L);
-        request.setName("John Doe");
-        request.setEmail("john.doe@example.com");
-        request.setCompany("Globex Company");
-        request.setProductInterest("ERP Suite");
+    private BrochureRequestService service;
 
-        when(repository.save(request)).thenReturn(request);
+    @Captor
+    private ArgumentCaptor<BrochureRequest> requestCaptor;
 
-        BrochureRequestService service = new BrochureRequestService(repository, kafkaTemplate);
-
-        BrochureRequest result = service.createRequest(request);
-
-        assertThat(result.getStatus()).isEqualTo("PENDING");
-        assertThat(result.getCreatedAt()).isNotNull();
+    @BeforeEach
+    void setUp() {
+        service = new BrochureRequestService(repository, kafkaTemplate, JsonMapper.builder().build());
     }
 
+    @Test
+    void create_savesRequestAsPendingAndPublishesEvent() {
+        BrochureRequestRequest request = new BrochureRequestRequest(
+                "John Doe", "john.doe@example.com", "Globex", "ERP Suite");
+
+        when(repository.save(any(BrochureRequest.class))).thenAnswer(invocation -> {
+            BrochureRequest entity = invocation.getArgument(0);
+            entity.setId(1L);
+            return entity;
+        });
+
+        BrochureRequestResponse response = service.create(request);
+
+        verify(repository).save(requestCaptor.capture());
+        assertThat(requestCaptor.getValue().getStatus()).isEqualTo(SyncStatus.PENDING);
+
+        assertThat(response.id()).isEqualTo(1L);
+        assertThat(response.status()).isEqualTo(SyncStatus.PENDING);
+
+        // With no active transaction the event is published immediately (as a JSON string).
+        verify(kafkaTemplate).send(eq("brochure-requests-created"), eq("1"), anyString());
+    }
 
     @Test
-    void getRequestById_shouldReturnRequest_whenfound() {
+    void getById_returnsMappedResponse_whenFound() {
         BrochureRequest existing = new BrochureRequest();
         existing.setId(1L);
         existing.setName("Jane Doe");
+        existing.setStatus(SyncStatus.PENDING);
 
         when(repository.findById(1L)).thenReturn(Optional.of(existing));
-        BrochureRequestService service = new BrochureRequestService(repository, kafkaTemplate);
 
-        Optional<BrochureRequest> result = service.getRequestById(1L);
+        Optional<BrochureRequestResponse> result = service.getById(1L);
+
         assertThat(result).isPresent();
-        assertThat(result.get().getId()).isEqualTo(1L);
+        assertThat(result.get().id()).isEqualTo(1L);
+        assertThat(result.get().name()).isEqualTo("Jane Doe");
     }
 
     @Test
-    void getRequestById_shouldReturnEmptyOptional_whenNotFound() {
+    void getById_returnsEmpty_whenNotFound() {
         when(repository.findById(99L)).thenReturn(Optional.empty());
-        BrochureRequestService service = new BrochureRequestService(repository, kafkaTemplate);
-        Optional<BrochureRequest> result = service.getRequestById(99L);
-        assertThat(result).isEmpty();
-
+        assertThat(service.getById(99L)).isEmpty();
     }
 
     @Test
-    void getRequestsByStatus_shouldReturnMatchingRequests() {
-       BrochureRequest failedRequest = new BrochureRequest();
-       failedRequest.setId(2L);
-       failedRequest.setStatus("FAILED");
+    void markSynced_setsStatusAndClearsFailureReason() {
+        BrochureRequest existing = new BrochureRequest();
+        existing.setId(3L);
+        existing.setStatus(SyncStatus.PENDING);
+        existing.setFailureReason("previous error");
+        when(repository.findById(3L)).thenReturn(Optional.of(existing));
 
-       when(repository.findByStatus("FAILED")).thenReturn(List.of(failedRequest));
+        service.markSynced(3L);
 
-       BrochureRequestService service = new BrochureRequestService(repository, kafkaTemplate);
+        verify(repository).save(requestCaptor.capture());
+        assertThat(requestCaptor.getValue().getStatus()).isEqualTo(SyncStatus.SYNCED);
+        assertThat(requestCaptor.getValue().getFailureReason()).isNull();
+    }
 
-       List<BrochureRequest> result = service.getRequestsByStatus("FAILED");
+    @Test
+    void markFailed_setsStatusAndReason() {
+        BrochureRequest existing = new BrochureRequest();
+        existing.setId(5L);
+        existing.setStatus(SyncStatus.PENDING);
+        when(repository.findById(5L)).thenReturn(Optional.of(existing));
 
-       assertThat(result).hasSize(1);
+        service.markFailed(5L, "Salesforce down");
 
-       assertThat(result.get(0).getStatus()).isEqualTo("FAILED");
-
-
+        verify(repository).save(requestCaptor.capture());
+        assertThat(requestCaptor.getValue().getStatus()).isEqualTo(SyncStatus.FAILED);
+        assertThat(requestCaptor.getValue().getFailureReason()).isEqualTo("Salesforce down");
     }
 }

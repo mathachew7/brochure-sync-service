@@ -1,4 +1,4 @@
-package com.subash.brochure_sync_service.kafka;
+package com.subash.brochure_sync_service.config;
 
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.common.serialization.StringSerializer;
@@ -12,6 +12,13 @@ import org.springframework.kafka.core.ProducerFactory;
 import java.util.HashMap;
 import java.util.Map;
 
+/**
+ * Kafka producer wiring. Events are serialized to a JSON string (via the
+ * application's Jackson {@code ObjectMapper}) and sent with the plain
+ * {@link StringSerializer}, so the pipeline stays on a single Jackson version
+ * and producer/consumer remain decoupled from any type headers. Consumer-side
+ * deserialization is configured in {@code application.properties}.
+ */
 @Configuration
 public class KafkaConfig {
 

@@ -1,42 +1,60 @@
 package com.subash.brochure_sync_service.model;
 
-import lombok.Data;
-import lombok.NoArgsConstructor;
-import lombok.AllArgsConstructor;
-
-import jakarta.validation.constraints.Email;
-import jakarta.validation.constraints.NotBlank;
-
+import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Table;
 
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.UpdateTimestamp;
+
+import java.time.Instant;
 
 @Entity
+@Table(name = "brochure_request")
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
+@Builder
 public class BrochureRequest {
-    
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @NotBlank(message = "Name is required")
+    @Column(nullable = false)
     private String name;
 
-    @Email(message = "Email should be valid")
-    @NotBlank(message = "Email is required")
+    @Column(nullable = false)
     private String email;
 
-    @NotBlank(message = "Company is required")
+    @Column(nullable = false)
     private String company;
 
-    @NotBlank(message = "Product interest is required")
+    @Column(name = "product_interest", nullable = false)
     private String productInterest;
 
-    private String status;  // PENDING, SYNCED, FAILED
-    private String failureReason;  // Reason for failure if status is FAILED
-    private String createdAt;
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private SyncStatus status;
+
+    @Column(name = "failure_reason", length = 1000)
+    private String failureReason;
+
+    @CreationTimestamp
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private Instant createdAt;
+
+    @UpdateTimestamp
+    @Column(name = "updated_at", nullable = false)
+    private Instant updatedAt;
 }
